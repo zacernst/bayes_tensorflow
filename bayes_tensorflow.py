@@ -30,6 +30,15 @@ class Statement(object):
         return ~(self & ~other)
 
     def __eq__(self, other):
+        if not isinstance(other, Statement):
+            return False
+        if isinstance(self, Negation) and not isinstance(other, Negation):
+            return False
+        if isinstance(self, Conjunction) and not isinstance(other, Conjunction):
+            return False
+        if self is other:
+            return True
+        import pdb; pdb.set_trace()
         raise Exception('Equality tests should be defined for child classes.')
 
     def is_atomic(self):
@@ -84,6 +93,11 @@ class Given(object):
     def __repr__(self):
         return ' '.join([str(self.event), '|', str(self.given)])
 
+    def __eq__(self, other):
+        if not isinstance(other, Given):
+            return False
+        return self.event == other.event and self.given == other.given
+
 
 def event_combinations(*events):
     """
@@ -123,6 +137,10 @@ class Conjunction(Statement):
     def __repr__(self):
         return '(' + ' & '.join([str(conjunct) for conjunct in self.conjuncts]) + ')'
 
+    def __eq__(self, other):
+        if not isinstance(other, Conjunction):
+            return False
+        return self.conjuncts == other.conjuncts
 
 class BayesNode(Statement):
     """
@@ -156,6 +174,20 @@ class BayesNode(Statement):
         self.outgoing_edges.append(edge)
         other.incoming_edges.append(edge)
 
+    def is_source(self):
+        """
+        Tests whether there is no incoming edge.
+        """
+
+        return len(self.incoming_edges) == 0
+
+    def is_sink(self):
+        """
+        Tests whether there is not ougoing edge.
+        """
+        
+        return len(self.outgoing_edges) == 0
+
     def fact_requirements(self):
         """
         This looks at all parents of ``self`` and returns a list of lists.
@@ -163,6 +195,8 @@ class BayesNode(Statement):
         """
 
         incoming_nodes = [edge.source for edge in self.incoming_edges]
+        if len(incoming_nodes) == 0:
+            return [self, Negation(self)] 
         event_tuples = event_combinations(*incoming_nodes)
         return [
             Given(self, Conjunction(*event_tuple))
@@ -203,5 +237,10 @@ fact = Fact(Given(c, a & b), .5)
 fact_book += fact
 
 print c.fact_requirements()
+print a.fact_requirements()
 # Next -- test whether the fact requirements are satisfied by a ``Fact``
 # in the ``FactBook`` object.
+print fact_book
+###
+
+print fact_book.facts[0].statement == c.fact_requirements()[0]
