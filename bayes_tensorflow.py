@@ -208,7 +208,7 @@ class BayesNode(Statement):
         recurse(self)
         return node_list
 
-    def iter_undirected_paths(self):
+    def iter_undirected_paths(self, target=None):
         """
         Returns a list of lists, which are paths connecting self to other,
         ignoring the directionality of the edges.
@@ -216,13 +216,16 @@ class BayesNode(Statement):
         
         def recurse(step_list):
             current_node = step_list[-1]
-            next_steps = current_node.children() + current_node.parents()
-            next_steps = [i for i in next_steps if i not in step_list]
-            if len(next_steps) == 0:
+            if current_node is target:
                 yield step_list
-            for next_step in next_steps:
-                for i in recurse(copy.copy(step_list) + [next_step]):
-                    yield i
+            else:
+                next_steps = current_node.children() + current_node.parents()
+                next_steps = [i for i in next_steps if i not in step_list]
+                if len(next_steps) == 0:
+                    yield step_list
+                for next_step in next_steps:
+                    for i in recurse(copy.copy(step_list) + [next_step]):
+                        yield i
         
         for path in recurse([self]):
             yield path
@@ -238,6 +241,11 @@ class BayesNode(Statement):
         return len(self.parents) == 0
 
     def annotate_path(self, *path):
+        """
+        Examines each pair nodes in a path and annotates them with the directionality
+        of the edges in the original graph. To be used for testing d-separation.
+        """
+
         annotated_path = []
         for index, node in enumerate(path):
             if index == len(path) - 1:
@@ -247,9 +255,42 @@ class BayesNode(Statement):
             annotated_path.append(path_triple)
         return annotated_path
 
+    def annotated_paths(self):
+        return [self.annotate_path(*path) for path in self.iter_undirected_paths()]
+
+    @staticmethod
+    def path_patterns(path):
+        """
+        The d-separation criteria require us to check whether paths have
+        arrows converging on nodes, diverging from them, or chains of arrows
+        pointing in the same direction.
+        """
+
+        if len(path) < 2:
+            return None
+        path_pattern_list = []
+        for index, first_triple in enumerate(path[:-1]):
+            second_triple = path[index + 1]
+            quintuple = (
+                first_triple[0], first_triple[1], first_triple[2],
+                second_triple[1], second_triple[2],)
+            first_arrow = first_triple[1]
+            second_arrow = second_triple[1]
+            pattern = None
+            if first_arrow == '<-' and second_arrow == '->':
+                pattern = 'diverge'
+            elif first_arrow == '->' and second_arrow == '<-':
+                pattern = 'converge'
+            elif first_arrow == second_arrow:
+                pattern = 'chain'
+            else:
+                raise Exception('This should not happen.')
+            path_pattern_list.append((pattern, quintuple,))
+        return path_pattern_list
+
     def is_sink(self):
         """
-        Tests whether there is not ougoing edge.
+        Tests whether there is no outgoing edge.
         """
         
         return len(self.children) == 0
