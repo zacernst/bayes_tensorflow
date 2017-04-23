@@ -7,6 +7,7 @@ a set of Tensorflow ops.
 
 import itertools
 import hashlib
+import copy
 import tensorflow as tf
 
 
@@ -38,8 +39,8 @@ class Statement(object):
             return False
         if self is other:
             return True
-        import pdb; pdb.set_trace()
-        raise Exception('Equality tests should be defined for child classes.')
+        return False  # This is sketchy -- there might be other cases to check
+        # raise Exception('Equality tests should be defined for child classes.')
 
     def is_atomic(self):
         return not isinstance(self, (Negation, Conjunction,))
@@ -174,19 +175,98 @@ class BayesNode(Statement):
         self.outgoing_edges.append(edge)
         other.incoming_edges.append(edge)
 
+    def connected_nodes(self):
+        """
+        Returns a list of all the nodes connected (directly or indirectly) to
+        the node. In other words, it returns all the nodes in the graph.
+        """
+
+        node_list = []
+        
+        def recurse(node):
+            if node in node_list:
+                return
+            node_list.append(node)
+            for child in node.children():
+                recurse(child)
+            for parent in node.parents():
+                recurse(parent)
+        
+        recurse(self)
+        return node_list
+
+    def descendants(self):
+        node_list = []
+        
+        def recurse(node):
+            if node in node_list:
+                return
+            node_list.append(node)
+            for child in node.children():
+                recurse(child)
+
+        recurse(self)
+        return node_list
+
+    def iter_undirected_paths(self):
+        """
+        Returns a list of lists, which are paths connecting self to other,
+        ignoring the directionality of the edges.
+        """
+        
+        def recurse(step_list):
+            current_node = step_list[-1]
+            next_steps = current_node.children() + current_node.parents()
+            next_steps = [i for i in next_steps if i not in step_list]
+            if len(next_steps) == 0:
+                yield step_list
+            for next_step in next_steps:
+                for i in recurse(copy.copy(step_list) + [next_step]):
+                    yield i
+        
+        for path in recurse([self]):
+            yield path
+            
+    def undirected_paths(self):
+        return list(self.iter_undirected_paths())
+
     def is_source(self):
         """
         Tests whether there is no incoming edge.
         """
 
-        return len(self.incoming_edges) == 0
+        return len(self.parents) == 0
+
+    def annotate_path(self, *path):
+        annotated_path = []
+        for index, node in enumerate(path):
+            if index == len(path) - 1:
+                continue
+            next_node = path[index + 1]
+            path_triple = (node, '->' if next_node in node.parents() else '<-', next_node,)
+            annotated_path.append(path_triple)
+        return annotated_path
 
     def is_sink(self):
         """
         Tests whether there is not ougoing edge.
         """
         
-        return len(self.outgoing_edges) == 0
+        return len(self.children) == 0
+
+    def parents(self):
+        """
+        Return the parent nodes of the current node.
+        """
+
+        return [edge.source for edge in self.incoming_edges]
+
+    def children(self):
+        """
+        Return the child nodes of the current node.
+        """
+
+        return [edge.target for edge in self.outgoing_edges]
 
     def fact_requirements(self):
         """
@@ -194,7 +274,7 @@ class BayesNode(Statement):
         Each sublist is a boolean combination of each of the upstream nodes.
         """
 
-        incoming_nodes = [edge.source for edge in self.incoming_edges]
+        incoming_nodes = self.parents()
         if len(incoming_nodes) == 0:
             return [self, Negation(self)] 
         event_tuples = event_combinations(*incoming_nodes)
@@ -229,8 +309,11 @@ print result
 a = BayesNode(name='a')
 b = BayesNode(name='b')
 c = BayesNode(name='c')
+d = BayesNode(name='d')
 a >> c  # Add an edge connective ``a`` to ``b``
 b >> c
+d >> a
+d >> b
 fact_book = FactBook()
 
 fact = Fact(Given(c, a & b), .5)
@@ -244,3 +327,5 @@ print fact_book
 ###
 
 print fact_book.facts[0].statement == c.fact_requirements()[0]
+for i in a.undirected_paths():
+    print i

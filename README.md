@@ -23,7 +23,13 @@ a = BayesNode(name='a')
 b = BayesNode(name='b')
 ```
 
-Then we'd create the `FactBook` and the relevant `Fact`:
+and connect them:
+
+```
+a >> b
+```
+
+Then we'd create the `FactBook` and the relevant `Fact`s:
 
 ```
 fact_book = FactBook()
