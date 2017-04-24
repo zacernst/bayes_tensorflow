@@ -221,7 +221,7 @@ class BayesNode(Statement):
             else:
                 next_steps = current_node.children() + current_node.parents()
                 next_steps = [i for i in next_steps if i not in step_list]
-                if len(next_steps) == 0:
+                if len(next_steps) == 0 and step_list[-1] is target or target is None:
                     yield step_list
                 for next_step in next_steps:
                     for i in recurse(copy.copy(step_list) + [next_step]):
@@ -250,7 +250,7 @@ class BayesNode(Statement):
             if index == len(path) - 1:
                 continue
             next_node = path[index + 1]
-            path_triple = (node, '->' if next_node in node.parents() else '<-', next_node,)
+            path_triple = (node, '->' if next_node in node.children() else '<-', next_node,)
             annotated_path.append(path_triple)
         return annotated_path
 
@@ -339,15 +339,30 @@ class BayesNode(Statement):
             """
             Test whether the ``path_pattern`` is d-separated by ``z``.
             """
-            pass
+
+            # Verify that we're handling the None case correctly
+            if path_pattern is None:  # Degenerate case
+                return False
+            
+            for category, quintuple in path_pattern:
+                w = quintuple[2]
+                if category == 'converge':
+                    if w is z or w in z.descendants():
+                        return True
+                elif category == 'chain':
+                    if w is z:
+                        return True
+                elif category == 'diverge':
+                    if w is z:
+                        return True
+                else:
+                    raise Exception('This should never happen.')
+            return False  # No w satisfying d-separation was found
 
         path_patterns = self.all_path_patterns(target=y)
-        for path_pattern in path_patterns:
-            if path_pattern is None:
-                return False  # Degenerate case -- no triples
-
-
-        import pdb; pdb.set_trace()
+        return all(
+            path_d_separated(path_pattern, z) for
+            path_pattern in path_patterns)
 
 
 class BayesEdge(object):
@@ -377,10 +392,13 @@ a = BayesNode(name='a')
 b = BayesNode(name='b')
 c = BayesNode(name='c')
 d = BayesNode(name='d')
-a >> c  # Add an edge connective ``a`` to ``b``
-b >> c
-d >> a
-d >> b
+e = BayesNode(name='e')
+a >> b
+a >> c
+b >> d
+c >> d
+d >> e
+
 fact_book = FactBook()
 
 fact = Fact(Given(c, a & b), .5)
