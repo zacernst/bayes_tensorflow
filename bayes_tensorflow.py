@@ -230,8 +230,8 @@ class BayesNode(Statement):
         for path in recurse([self]):
             yield path
             
-    def undirected_paths(self):
-        return list(self.iter_undirected_paths())
+    def undirected_paths(self, target=None):
+        return list(self.iter_undirected_paths(target=target))
 
     def is_source(self):
         """
@@ -245,7 +245,6 @@ class BayesNode(Statement):
         Examines each pair nodes in a path and annotates them with the directionality
         of the edges in the original graph. To be used for testing d-separation.
         """
-
         annotated_path = []
         for index, node in enumerate(path):
             if index == len(path) - 1:
@@ -255,22 +254,22 @@ class BayesNode(Statement):
             annotated_path.append(path_triple)
         return annotated_path
 
-    def annotated_paths(self):
-        return [self.annotate_path(*path) for path in self.iter_undirected_paths()]
+    def annotated_paths(self, target=None):
+        return [self.annotate_path(*path) for path in self.iter_undirected_paths(target=target)]
 
     @staticmethod
-    def path_patterns(path):
+    def path_patterns(annotated_path):
         """
-        The d-separation criteria require us to check whether paths have
+        The d-separation criterion requires us to check whether paths have
         arrows converging on nodes, diverging from them, or chains of arrows
         pointing in the same direction.
         """
 
-        if len(path) < 2:
+        if len(annotated_path) < 2:
             return None
         path_pattern_list = []
-        for index, first_triple in enumerate(path[:-1]):
-            second_triple = path[index + 1]
+        for index, first_triple in enumerate(annotated_path[:-1]):
+            second_triple = annotated_path[index + 1]
             quintuple = (
                 first_triple[0], first_triple[1], first_triple[2],
                 second_triple[1], second_triple[2],)
@@ -287,6 +286,14 @@ class BayesNode(Statement):
                 raise Exception('This should not happen.')
             path_pattern_list.append((pattern, quintuple,))
         return path_pattern_list
+
+    def all_path_patterns(self, target=None):
+        """
+        Return all patterns, labeled with 'converge', 'diverge', etc. from ``self``
+        to (optional) ``target``.
+        """
+
+        return [self.path_patterns(path) for path in self.annotated_paths(target=target)]
 
     def is_sink(self):
         """
@@ -322,7 +329,26 @@ class BayesNode(Statement):
         return [
             Given(self, Conjunction(*event_tuple))
             for event_tuple in event_tuples]
-        
+
+    def d_separated(self, z, y):
+        """
+        Test whether ``z`` d-separates node ``self`` from node ``y``.
+        """
+
+        def path_d_separated(path_pattern, z):
+            """
+            Test whether the ``path_pattern`` is d-separated by ``z``.
+            """
+            pass
+
+        path_patterns = self.all_path_patterns(target=y)
+        for path_pattern in path_patterns:
+            if path_pattern is None:
+                return False  # Degenerate case -- no triples
+
+
+        import pdb; pdb.set_trace()
+
 
 class BayesEdge(object):
     """
