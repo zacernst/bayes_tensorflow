@@ -203,9 +203,9 @@ class BayesNode(Statement):
             return True  # Vacuously satisfied
         for fact in self.fact_book:
             statement = fact.statement
+            # Only ``Given`` statements are relevant
             if not isinstance(statement, Given):
                 continue
-                # Test if the given is a conjunction of parents
             if statement in parent_requirements:
                 satisfied_requirements_tally += 1
         return satisfied_requirements_tally == len(parent_requirements)
