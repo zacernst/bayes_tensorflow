@@ -2,9 +2,12 @@
 Work in progress.
 
 Bayes network classes that will convert a network specification into
-a set of Tensorflow ops.
+a set of TensorFlow ops.
 """
 
+import codegen
+from ast import *
+from types import *
 import itertools
 import hashlib
 import copy
@@ -31,16 +34,30 @@ class Statement(object):
         return ~(self & ~other)
 
     def __eq__(self, other):
+        """
+        Equality test.
+
+        Not all cases are accounted for yet.
+        """
         if not isinstance(other, Statement):
             return False
-        if isinstance(self, Negation) and not isinstance(other, Negation):
+        if isinstance(self, Conjunction) and len(self.conjuncts) == 1:
+            left = self.conjuncts[0]
+        else:
+            left = self
+        if isinstance(other, Conjunction) and len(other.conjuncts) == 1:
+            right = other.conjuncts[0]
+        else:
+            right = other
+        if isinstance(left, Negation) != isinstance(right, Negation):
             return False
-        if isinstance(self, Conjunction) and not isinstance(other, Conjunction):
+        if isinstance(left, Conjunction) and not isinstance(right, Conjunction):
             return False
-        if self is other:
+        if left is right:
             return True
+        if isinstance(left, Negation) and isinstance(right, Negation):
+            return left.statement is right.statement
         return False  # This is sketchy -- there might be other cases to check
-        # raise Exception('Equality tests should be defined for child classes.')
 
     def is_atomic(self):
         return not isinstance(self, (Negation, Conjunction,))
@@ -67,6 +84,9 @@ class FactBook(object):
     def __repr__(self):
         return '\n'.join([str(i) for i in self.facts])
 
+    def __iter__(self):
+        for fact in self.facts:
+            yield fact
 
 class Fact(object):
     """
@@ -132,6 +152,11 @@ class Conjunction(Statement):
     A list of conjuncts.
     """
 
+    def __new__(self, *args):
+        if len(args) == 1:
+            self = args[0]
+        return self
+
     def __init__(self, *args):
         self.conjuncts = args
 
@@ -143,6 +168,7 @@ class Conjunction(Statement):
             return False
         return self.conjuncts == other.conjuncts
 
+
 class BayesNode(Statement):
     """
     This is the main class for the module. It represents a vertex in the Bayes network.
@@ -152,8 +178,10 @@ class BayesNode(Statement):
         self,
         activation_probability=None,
         state=None,
+        fact_book=None,
         pinned=False,
             name=None):
+        self.fact_book = fact_book
         self.incoming_edges = []
         self.outgoing_edges = []
         self.activation_probability = activation_probability
@@ -162,6 +190,25 @@ class BayesNode(Statement):
         self.name = name or hashlib.md5(str(id(self))).hexdigest()
         # For now, we are not calling the parent class's ``__init__`` method.
         # super(BayesNode, self).__init__()
+
+    def top_down_eval(self):
+        # evaluate the value of self, given the parents only
+        pass
+
+    def parent_reqs_satisfied(self):
+        # True if the ``FactBook`` has all necessary data on parents
+        parent_requirements = self.fact_requirements()
+        satisfied_requirements_tally = 0
+        if self.is_source():
+            return True  # Vacuously satisfied
+        for fact in self.fact_book:
+            statement = fact.statement
+            if not isinstance(statement, Given):
+                continue
+                # Test if the given is a conjunction of parents
+            if statement in parent_requirements:
+                satisfied_requirements_tally += 1
+        return satisfied_requirements_tally == len(parent_requirements)
 
     def __repr__(self):
         return str(self.name)
@@ -238,7 +285,7 @@ class BayesNode(Statement):
         Tests whether there is no incoming edge.
         """
 
-        return len(self.parents) == 0
+        return len(self.parents()) == 0
 
     def annotate_path(self, *path):
         """
@@ -250,12 +297,16 @@ class BayesNode(Statement):
             if index == len(path) - 1:
                 continue
             next_node = path[index + 1]
-            path_triple = (node, '->' if next_node in node.children() else '<-', next_node,)
+            path_triple = (
+                node, '->' if next_node in node.children()
+                else '<-', next_node,)
             annotated_path.append(path_triple)
         return annotated_path
 
     def annotated_paths(self, target=None):
-        return [self.annotate_path(*path) for path in self.iter_undirected_paths(target=target)]
+        return [
+            self.annotate_path(*path) for path in
+            self.iter_undirected_paths(target=target)]
 
     @staticmethod
     def path_patterns(annotated_path):
@@ -293,7 +344,9 @@ class BayesNode(Statement):
         to (optional) ``target``.
         """
 
-        return [self.path_patterns(path) for path in self.annotated_paths(target=target)]
+        return [
+            self.path_patterns(path) for path in
+            self.annotated_paths(target=target)]
 
     def is_sink(self):
         """
@@ -393,6 +446,7 @@ b = BayesNode(name='b')
 c = BayesNode(name='c')
 d = BayesNode(name='d')
 e = BayesNode(name='e')
+
 a >> b
 a >> c
 b >> d
@@ -403,7 +457,10 @@ fact_book = FactBook()
 
 fact = Fact(Given(c, a & b), .5)
 fact_book += fact
-
+fact = Fact(Given(b, a), .2)
+fact_book += fact
+fact = Fact(Given(b, ~a), .3)
+fact_book += fact
 print c.fact_requirements()
 print a.fact_requirements()
 # Next -- test whether the fact requirements are satisfied by a ``Fact``
@@ -414,3 +471,7 @@ print fact_book
 print fact_book.facts[0].statement == c.fact_requirements()[0]
 for i in a.undirected_paths():
     print i
+
+b.fact_book = fact_book
+print b.parent_reqs_satisfied()
+
