@@ -5,13 +5,25 @@ Bayes network classes that will convert a network specification into
 a set of TensorFlow ops.
 """
 
-import codegen
-from ast import *
 from types import *
 import itertools
 import hashlib
 import copy
+import functools
 import tensorflow as tf
+
+
+def dict_to_function(arg_dict):
+    """
+    We need functions for Tensorflow ops, so we will use this function
+    to dynamically create functions from dictionaries.
+    """
+
+    def inner_function(lookup, **inner_dict):
+        return inner_dict[lookup]
+
+    new_function = functools.partial(inner_function, **arg_dict)
+    return new_function
 
 
 class Statement(object):
@@ -22,6 +34,8 @@ class Statement(object):
     """
 
     def __and__(self, other):
+        if self is other:
+            return self
         return Conjunction(self, other)
 
     def __or__(self, other):
@@ -152,11 +166,6 @@ class Conjunction(Statement):
     A list of conjuncts.
     """
 
-    def __new__(self, *args):
-        if len(args) == 1:
-            self = args[0]
-        return self
-
     def __init__(self, *args):
         self.conjuncts = args
 
@@ -195,7 +204,7 @@ class BayesNode(Statement):
         # evaluate the value of self, given the parents only
         pass
 
-    def parent_reqs_satisfied(self):
+    def parent_requirements_satisfied(self):
         # True if the ``FactBook`` has all necessary data on parents
         parent_requirements = self.fact_requirements()
         satisfied_requirements_tally = 0
@@ -380,8 +389,29 @@ class BayesNode(Statement):
             return [self, Negation(self)] 
         event_tuples = event_combinations(*incoming_nodes)
         return [
-            Given(self, Conjunction(*event_tuple))
+            Given(self,
+                Conjunction(*event_tuple) if len(event_tuple) > 1 else
+                event_tuple[0])
             for event_tuple in event_tuples]
+
+    def relevant_parent_fact_dict(self):
+        parent_requirements = self.fact_requirements()
+        relevant_fact_requirements = [
+            fact for fact in self.fact_book
+            if fact.statement in parent_requirements]
+        relevant_fact_dict = {
+            fact.statement: fact.probability for fact in
+            relevant_fact_requirements}
+        return relevant_fact_dict
+
+    def create_parent_fact_function(self):
+        """
+        Retrieves all the relevant facts from ``self.fact_book``,
+        creates a dictionary for lookups, then returns a function
+        that replaces dictionary lookups with function calls.
+        """
+
+        return dict_to_function(self.relevant_parent_fact_dict())
 
     def d_separated(self, z, y):
         """
@@ -429,49 +459,58 @@ class BayesEdge(object):
         self.source = source
         self.target = target
 
+def sandbox():
+    """
+    just for testing
+    """
+    x = tf.Variable(3, name='x')
+    y = tf.Variable(4, name='y')
+    f = x * x * y + y + 2
 
-x = tf.Variable(3, name='x')
-y = tf.Variable(4, name='y')
-f = x * x * y + y + 2
+    with tf.Session() as sess:
+        init = tf.global_variables_initializer()  # node to initialize the rest
+        init.run()  # Run the initializer for all variables
+        result = f.eval()
 
-with tf.Session() as sess:
-    init = tf.global_variables_initializer()  # node to initialize the rest
-    init.run()  # Run the initializer for all variables
-    result = f.eval()
+    print result
 
-print result
+    a = BayesNode(name='a')
+    b = BayesNode(name='b')
+    c = BayesNode(name='c')
+    d = BayesNode(name='d')
+    e = BayesNode(name='e')
 
-a = BayesNode(name='a')
-b = BayesNode(name='b')
-c = BayesNode(name='c')
-d = BayesNode(name='d')
-e = BayesNode(name='e')
+    a >> b
+    a >> c
+    b >> d
+    c >> d
+    d >> e
 
-a >> b
-a >> c
-b >> d
-c >> d
-d >> e
+    fact_book = FactBook()
 
-fact_book = FactBook()
+    fact = Fact(Given(c, a & b), .5)
+    fact_book += fact
+    fact = Fact(Given(b, a), .2)
+    fact_book += fact
+    fact = Fact(Given(b, ~a), .3)
+    fact_book += fact
+    print c.fact_requirements()
+    print a.fact_requirements()
+    # Next -- test whether the fact requirements are satisfied by a ``Fact``
+    # in the ``FactBook`` object.
+    print fact_book
+    ###
 
-fact = Fact(Given(c, a & b), .5)
-fact_book += fact
-fact = Fact(Given(b, a), .2)
-fact_book += fact
-fact = Fact(Given(b, ~a), .3)
-fact_book += fact
-print c.fact_requirements()
-print a.fact_requirements()
-# Next -- test whether the fact requirements are satisfied by a ``Fact``
-# in the ``FactBook`` object.
-print fact_book
-###
+    print fact_book.facts[0].statement == c.fact_requirements()[0]
+    for i in a.undirected_paths():
+        print i
 
-print fact_book.facts[0].statement == c.fact_requirements()[0]
-for i in a.undirected_paths():
-    print i
+    b.fact_book = fact_book
+    print b.parent_requirements_satisfied()
 
-b.fact_book = fact_book
-print b.parent_reqs_satisfied()
+    if not b.parent_requirements_satisfied():
+        raise Exception()
 
+
+if __name__ == '__main__':
+    sandbox()
