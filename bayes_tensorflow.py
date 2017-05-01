@@ -2,7 +2,7 @@
 Work in progress.
 
 Bayes network classes that will convert a network specification into
-a set of TensorFlow ops.
+a set of TensorFlow ops and a computation graph.
 """
 
 from types import *
@@ -24,6 +24,48 @@ def dict_to_function(arg_dict):
 
     new_function = functools.partial(inner_function, **arg_dict)
     return new_function
+
+
+class Arithmetic(object):
+
+    def __add__(self, other):
+        return Add(self, other)
+
+    def __mult__(self, other):
+        return Multiply(self, other)
+
+
+class Add(Arithmetic):
+
+    def __init__(self, addend_1, addend_2):
+        if not isinstance(addend_1, Arithmetic) or not isinstance(addend_2, Arithmetic):
+            raise Exception('Add only defined for ``Arithmetic`` objects')
+        self.addend_1 = addend_1
+        self.addend_2 = addend_2
+
+    def __repr__(self):
+
+        return '({addend_1} + {addend_2})'.format(
+            addend_1=str(addend_1), addend_2=str(addend_2))
+
+
+class Multiply(Arithmetic):
+
+    def __init__(self, multiplicand_1, multiplicand_2):
+        if (not isinstance(multiplicand_1, Arithmetic) or
+                not isinstance(multiplicand_2, Arithmetic)):
+            raise Exception('Multiply only defined for ``Arithmetic`` objects')
+
+
+class Probability(Arithmetic):
+
+    def __init__(self, statement):
+        if not isinstance(statement, Statement):
+            raise Exception('Probability applies only to ``Statement``s')
+        self.statement = statement
+
+    def __repr__(self):
+        return 'P({statement})'.format(statement=str(self.statement))
 
 
 class Statement(object):
@@ -102,6 +144,7 @@ class FactBook(object):
         for fact in self.facts:
             yield fact
 
+
 class Fact(object):
     """
     A ``Fact`` is an assertion that an event has a probability of being true.
@@ -112,10 +155,10 @@ class Fact(object):
         self.probability = probability
 
     def __repr__(self):
-        return 'P(' + str(self.statement) + ') = ' + str(self.probability)
+        return str(self.statement) + ' = ' + str(self.probability)
 
 
-class Given(object):
+class Given(Statement):
     """
     Expressions like ``P(x|y)`` are not events or states; they're used only in
     probability assignments. So they get their own class.
@@ -142,7 +185,8 @@ def event_combinations(*events):
 
     number_of_events = len(events)
     out = []
-    for boolean_combination in itertools.product(*([[True, False]] * number_of_events)):
+    for boolean_combination in itertools.product(
+            *([[True, False]] * number_of_events)):
         out.append(
             [events[i] if boolean else Negation(events[i])
              for i, boolean in enumerate(boolean_combination)])
@@ -170,7 +214,9 @@ class Conjunction(Statement):
         self.conjuncts = args
 
     def __repr__(self):
-        return '(' + ' & '.join([str(conjunct) for conjunct in self.conjuncts]) + ')'
+        return (
+            '(' + ' & '.join(
+                [str(conjunct) for conjunct in self.conjuncts]) + ')')
 
     def __eq__(self, other):
         if not isinstance(other, Conjunction):
@@ -180,7 +226,8 @@ class Conjunction(Statement):
 
 class BayesNode(Statement):
     """
-    This is the main class for the module. It represents a vertex in the Bayes network.
+    This is the main class for the module.
+    It represents a vertex in the Bayes network.
     """
 
     def __init__(
@@ -197,6 +244,7 @@ class BayesNode(Statement):
         self.state = state
         self.pinned = pinned
         self.name = name or hashlib.md5(str(id(self))).hexdigest()
+        self.parent_fact_lookup = None
         # For now, we are not calling the parent class's ``__init__`` method.
         # super(BayesNode, self).__init__()
 
@@ -213,9 +261,13 @@ class BayesNode(Statement):
         for fact in self.fact_book:
             statement = fact.statement
             # Only ``Given`` statements are relevant
-            if not isinstance(statement, Given):
+            import pdb; pdb.set_trace()
+            if not isinstance(statement, Probability):
                 continue
-            if statement in parent_requirements:
+            if not isinstance(statement.statement, Given):
+                continue
+            given_statement = statement.statement
+            if given_statement in parent_requirements:
                 satisfied_requirements_tally += 1
         return satisfied_requirements_tally == len(parent_requirements)
 
@@ -488,11 +540,11 @@ def sandbox():
 
     fact_book = FactBook()
 
-    fact = Fact(Given(c, a & b), .5)
+    fact = Fact(Probability(Given(c, a & b)), .5)
     fact_book += fact
-    fact = Fact(Given(b, a), .2)
+    fact = Fact(Probability(Given(b, a)), .2)
     fact_book += fact
-    fact = Fact(Given(b, ~a), .3)
+    fact = Fact(Probability(Given(b, ~a)), .3)
     fact_book += fact
     print c.fact_requirements()
     print a.fact_requirements()
@@ -510,6 +562,8 @@ def sandbox():
 
     if not b.parent_requirements_satisfied():
         raise Exception()
+
+    import pdb; pdb.set_trace()
 
 
 if __name__ == '__main__':
