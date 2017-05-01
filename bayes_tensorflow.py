@@ -35,6 +35,14 @@ class Arithmetic(object):
         return Multiply(self, other)
 
 
+class Inverse(Arithmetic):
+
+    def __init__(self, expression):
+        if not isinstance(expression, Arithmetic):
+            raise Exception('Inverse applies only to ``Arithmetic`` objects')
+        self.expression = expression
+
+
 class Add(Arithmetic):
 
     def __init__(self, addend_1, addend_2):
@@ -119,7 +127,7 @@ class Statement(object):
         return not isinstance(self, (Negation, Conjunction,))
 
 
-class FactBook(object):
+class EqualsBook(object):
     """
     Holds a list of facts.
     """
@@ -145,9 +153,9 @@ class FactBook(object):
             yield fact
 
 
-class Fact(object):
+class Equals(object):
     """
-    A ``Fact`` is an assertion that an event has a probability of being true.
+    A ``Equals`` is an assertion that an event has a probability of being true.
     """
 
     def __init__(self, statement, probability):
@@ -253,7 +261,7 @@ class BayesNode(Statement):
         pass
 
     def parent_requirements_satisfied(self):
-        # True if the ``FactBook`` has all necessary data on parents
+        # True if the ``EqualsBook`` has all necessary data on parents
         parent_requirements = self.fact_requirements()
         satisfied_requirements_tally = 0
         if self.is_source():
@@ -261,7 +269,6 @@ class BayesNode(Statement):
         for fact in self.fact_book:
             statement = fact.statement
             # Only ``Given`` statements are relevant
-            import pdb; pdb.set_trace()
             if not isinstance(statement, Probability):
                 continue
             if not isinstance(statement.statement, Given):
@@ -538,18 +545,18 @@ def sandbox():
     c >> d
     d >> e
 
-    fact_book = FactBook()
+    fact_book = EqualsBook()
 
-    fact = Fact(Probability(Given(c, a & b)), .5)
+    fact = Equals(Probability(Given(c, a & b)), .5)
     fact_book += fact
-    fact = Fact(Probability(Given(b, a)), .2)
+    fact = Equals(Probability(Given(b, a)), .2)
     fact_book += fact
-    fact = Fact(Probability(Given(b, ~a)), .3)
+    fact = Equals(Probability(Given(b, ~a)), .3)
     fact_book += fact
     print c.fact_requirements()
     print a.fact_requirements()
-    # Next -- test whether the fact requirements are satisfied by a ``Fact``
-    # in the ``FactBook`` object.
+    # Next -- test whether the fact requirements are satisfied by a ``Equals``
+    # in the ``EqualsBook`` object.
     print fact_book
     ###
 
