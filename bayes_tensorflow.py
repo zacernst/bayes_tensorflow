@@ -31,8 +31,24 @@ class Arithmetic(object):
     def __add__(self, other):
         return Add(self, other)
 
-    def __mult__(self, other):
+    def __mul__(self, other):
         return Multiply(self, other)
+
+
+class One(Arithmetic):
+    """
+    Could be handy for base case in recursive multiplications.
+    """
+    pass
+
+
+class Number(Arithmetic):
+
+    def __init__(self, value):
+        self.value = value
+
+    def __repr__(self):
+        return str(self.value)
 
 
 class Inverse(Arithmetic):
@@ -54,7 +70,7 @@ class Add(Arithmetic):
     def __repr__(self):
 
         return '({addend_1} + {addend_2})'.format(
-            addend_1=str(addend_1), addend_2=str(addend_2))
+            addend_1=str(self.addend_1), addend_2=str(self.addend_2))
 
 
 class Multiply(Arithmetic):
@@ -127,7 +143,7 @@ class Statement(object):
         return not isinstance(self, (Negation, Conjunction,))
 
 
-class EqualsBook(object):
+class FactBook(object):
     """
     Holds a list of facts.
     """
@@ -168,7 +184,7 @@ class Equals(object):
 
 class Given(Statement):
     """
-    Expressions like ``P(x|y)`` are not events or states; they're used only in
+    Expressions like ``x|y`` are not events or states; they're used only in
     probability assignments. So they get their own class.
     """
 
@@ -261,7 +277,7 @@ class BayesNode(Statement):
         pass
 
     def parent_requirements_satisfied(self):
-        # True if the ``EqualsBook`` has all necessary data on parents
+        # True if the ``FactBook`` has all necessary data on parents
         parent_requirements = self.fact_requirements()
         satisfied_requirements_tally = 0
         if self.is_source():
@@ -506,6 +522,23 @@ class BayesNode(Statement):
             path_d_separated(path_pattern, z) for
             path_pattern in path_patterns)
 
+    def compute_lambda(self):
+        """
+        Compute the evidential support for ``self`` based on likelihood.
+        Will return a ``Probability`` object (or multiplication of them).
+        """
+
+        def _one_child(child):
+            """
+            Get likelihood based on a single child. Use the "parent requirement"
+            of the child; locate it in the node's ``FactBook`` (assuming it
+            exists).
+            """
+
+            pass
+
+        # recursive call for all descendants; all lambdas then to be multiplied.
+
 
 class BayesEdge(object):
     """
@@ -545,7 +578,7 @@ def sandbox():
     c >> d
     d >> e
 
-    fact_book = EqualsBook()
+    fact_book = FactBook()
 
     fact = Equals(Probability(Given(c, a & b)), .5)
     fact_book += fact
@@ -556,7 +589,7 @@ def sandbox():
     print c.fact_requirements()
     print a.fact_requirements()
     # Next -- test whether the fact requirements are satisfied by a ``Equals``
-    # in the ``EqualsBook`` object.
+    # in the ``FactBook`` object.
     print fact_book
     ###
 

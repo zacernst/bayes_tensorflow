@@ -9,3 +9,5 @@ pyparsing==2.2.0
 six==1.10.0
 tensorflow==1.0.1
 codegen==1.0
+recommonmark
+cloud_sptheme
