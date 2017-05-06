@@ -3,6 +3,20 @@ Work in progress.
 
 Bayes network classes that will convert a network specification into
 a set of TensorFlow ops and a computation graph.
+
+The main work of the classes is to move from a directed graph to a
+set of formulas expressing what's known about the probability distribution
+of the events represented in the graph. When those formulas are derived,
+they can be associated with the corresponding nodes in the graph, and used
+for local message passing, Monte Carlo simulations, and translation into
+Tensorflow ops to be sent to the cpu or gpu.
+
+Current state: We can define a graph, and we can define what's known about
+direct causal influences (using the ``FactBook`` class). Basic facts about
+the graph can be calculated, such as which nodes d-separate arbitrary pairs
+of nodes. Message passing is next, for which we need to recursively calculate
+any node's lambda and pi functions (following Pearl). Helper methods easily
+define likelihoods, alphas (normalization factors), etc.
 """
 
 from types import *
@@ -35,6 +49,46 @@ class Arithmetic(object):
         return Multiply(self, other)
 
 
+class Sigma(Arithmetic):
+
+    def __init__(self, *values):
+        self.values = values
+
+    def __repr__(self):
+        return '(Sigma: ' + ', '.join([str(value) for value in self.values]) + ')'
+
+
+class Pi(Arithmetic):
+
+    def __init__(self, *values):
+        self.values = values
+
+    def __repr__(self):
+        return '(Pi: ' + ', '.join([str(value) for value in self.values]) + ')'
+
+
+def bayes(given_probability):
+    """
+    Takes P(a | b) and returns equivalent probability using Bayes Theorem.
+    Result is alpha * P(a) * Likelihood(a).
+    """
+
+    given = given_probability.statement
+    return (
+        alpha(given.event, given.given) * Probability(given.event) *
+        Probability(Given(given.given, given.event)))
+
+
+def alpha(x, y):
+    """
+    We'll have to generalize this to having many y's.
+    """
+
+    return Inverse(
+        (Probability(x) * Probability(Given(y, x))) +
+        (Probability(~x) * Probability(Given(y, ~x)))) 
+
+
 class One(Arithmetic):
     """
     Could be handy for base case in recursive multiplications.
@@ -58,6 +112,9 @@ class Inverse(Arithmetic):
             raise Exception('Inverse applies only to ``Arithmetic`` objects')
         self.expression = expression
 
+    def __repr__(self):
+        return '1 / ' + str(self.expression)
+
 
 class Add(Arithmetic):
 
@@ -79,6 +136,13 @@ class Multiply(Arithmetic):
         if (not isinstance(multiplicand_1, Arithmetic) or
                 not isinstance(multiplicand_2, Arithmetic)):
             raise Exception('Multiply only defined for ``Arithmetic`` objects')
+        self.multiplicand_1 = multiplicand_1
+        self.multiplicand_2 = multiplicand_2
+    
+    def __repr__(self):
+
+        return '({multiplicand_1} * {multiplicand_2})'.format(
+            multiplicand_1=str(self.multiplicand_1), multiplicand_2=str(self.multiplicand_2))
 
 
 class Probability(Arithmetic):
@@ -171,7 +235,7 @@ class FactBook(object):
 
 class Equals(object):
     """
-    A ``Equals`` is an assertion that an event has a probability of being true.
+    An ``Equals`` is an assertion that an event has a probability of being true.
     """
 
     def __init__(self, statement, probability):
