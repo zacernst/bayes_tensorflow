@@ -8,7 +8,7 @@ TensorFlow's main construct is the "computation graph" -- a series of mathematic
 
 Bayes networks comprise nodes (aka vertices) connected by directed edges, just like a neural network. Each node can either be activated or not. The probability of its activation depends on the activation of any other nodes which have edges leading to it. They are called _Bayes_ networks because Bayes Theorem is used to calculate the activations of upstream nodes, given the state of its downstream nodes.
 
-Many efficient algorithms have been developed to efficiently perform computations on Bayes networks. Because the nodes have a limited set of dependencies, it is possible to perform many of these computations in parallel. That's where TensorFlow comes in.
+Many efficient algorithms have been developed to perform computations on Bayes networks. Because the nodes have a limited set of dependencies, it is possible to perform many of these computations in parallel. That's where TensorFlow comes in.
 
 The difficulty in automating those algorithms is that deriving the necessary functions requires a lot of (simple) algebraic transformations, where those transformations depend on somewhat complex conditions of the graph. For example, we might be able to simplify a probability statement if it involves nodes that are "d-separated" from each other. Most of the work of these classes involves determining which transformations to make to probability statements, doing those transformations, and generating an abstract syntax tree (AST) of the results. With the AST in-hand, we can dynamically create the necessary functions (and hence, the Tensorflow ops).
 
