@@ -10,39 +10,6 @@ Bayes networks comprise nodes (aka vertices) connected by directed edges, just l
 
 Many efficient algorithms have been developed to efficiently perform computations on Bayes networks. Because the nodes have a limited set of dependencies, it is possible to perform many of these computations in parallel. That's where TensorFlow comes in.
 
-## Design
+The difficulty in automating those algorithms is that deriving the necessary functions requires a lot of (simple) algebraic transformations, where those transformations depend on somewhat complex conditions of the graph. For example, we might be able to simplify a probability statement if it involves nodes that are "d-separated" from each other. Most of the work of these classes involves determining which transformations to make to probability statements, doing those transformations, and generating an abstract syntax tree (AST) of the results. With the AST in-hand, we can dynamically create the necessary functions (and hence, the Tensorflow ops).
 
-Each Bayes network in this module consists of two parts: A set of `BayesNode` objects connected by `BayesEdge` objects, and a so-called `FactBook` object that contains information governing the activations of the nodes.
-
-For example, suppose you have the simplest non-trivial Bayes network, consisting of two nodes: `a` and `b`, where there is an edge connecting `a` to `b`. In order to specify `b`'s activation, we need to know the probability that `b` is activated, given that `a` is, as well as the probability that `b` is activated, given that `a` is not. In the vocabulary of this module, those data are "facts", which live in the `FactBook`. It is up to the user to put the required facts into the `FactBook`, and then one can begin to query the network.
-
-To make this network, we would create the two nodes like so:
-
-```
-a = BayesNode(name='a')
-b = BayesNode(name='b')
-```
-
-and connect them:
-
-```
-a >> b
-```
-
-Then we'd create the `FactBook` and the relevant `Fact`s:
-
-```
-fact_book = FactBook()
-fact_1 = Fact(Given(b, a), .2)
-fact_2 = Fact(Given(b, ~a), .5)
-```
-
-These two facts specify that the probability of `b` being activated when `a` is activated is .2, and it's .5 when `a` is not activated.
-
-Now we put the facts into the `FactBook`:
-
-```
-fact_book += fact_1
-fact_book += fact_2
-```
-
+More information can be found in the docstrings throughout the `bayes_node.py` module.

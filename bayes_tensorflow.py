@@ -11,10 +11,23 @@ they can be associated with the corresponding nodes in the graph, and used
 for local message passing, Monte Carlo simulations, and translation into
 Tensorflow ops to be sent to the cpu or gpu.
 
+The flow of information through the classes is as follows: The user will
+create ``BayesNodes`` and connect them into the desired graph structure.
+Depending on the way in which the graph will be queried, a set of
+probability statements will be required. These take the form of ``Probability``
+objects, which associate a ``Statement`` (which looks like a formula from
+propositional logic, where the variables correspond to graph nodes) with
+a value, e.g. ``P(a & ~b) = .5``. The statements are stored in a container
+called a ``FactBook`` which can be queried. At that point, we have enough
+information to automatically generate an abstract syntax tree of all the
+functions that are necessary for computing probabilities on the graph. The
+AST can be transformed into Python functions dynamically, or into
+Tensorflow ops.
+
 Current state: We can define a graph, and we can define what's known about
 direct causal influences (using the ``FactBook`` class). Basic facts about
 the graph can be calculated, such as which nodes d-separate arbitrary pairs
-of nodes. Message passing is next, for which we need to recursively calculate
+of nodes. Message passing is underway, for which we need to recursively calculate
 any node's lambda and pi functions (following Pearl). Helper methods easily
 define likelihoods, alphas (normalization factors), etc.
 """
@@ -41,15 +54,30 @@ def dict_to_function(arg_dict):
 
 
 class Arithmetic(object):
+    """
+    This is a mix-in class for enabling arithmetic or algebraic functions over
+    the objects.
+    """
 
     def __add__(self, other):
+        """
+        Allows us to use familiar ``+`` to denote addition.
+        """
+
         return Add(self, other)
 
     def __mul__(self, other):
+        """
+        Allows us to use familiar ``*`` for multiplication.
+        """
+
         return Multiply(self, other)
 
 
 class Sigma(Arithmetic):
+    """
+    Summation over a list of ``Arithmetic`` objects.
+    """
 
     def __init__(self, *values):
         self.values = values
@@ -59,6 +87,9 @@ class Sigma(Arithmetic):
 
 
 class Pi(Arithmetic):
+    """
+    Multiplication over a list of ``Arithmetic`` objects.
+    """
 
     def __init__(self, *values):
         self.values = values
@@ -146,6 +177,10 @@ class Multiply(Arithmetic):
 
 
 class Probability(Arithmetic):
+    """
+    ``Probability`` objects have ``Statement`` objects as attributes and are related
+    to floats in the range ``[0, 1]``.
+    """
 
     def __init__(self, statement):
         if not isinstance(statement, Statement):
@@ -203,7 +238,23 @@ class Statement(object):
             return left.statement is right.statement
         return False  # This is sketchy -- there might be other cases to check
 
+    def is_literal(self):
+        """
+        A ``literal`` is an atomic formula or the negation of an atomic formula.
+        """
+
+        return self.is_atomic() or (
+            isinstance(self, Negation) and self.statement.is_atomic())
+
     def is_atomic(self):
+        """
+        Although you can define a new statement using connectives other than
+        conjunction and negation, they are immediately transformed into
+        conjunctions and negations upon instantiation. Thus, we can test
+        whether a statement is atomic by checking whether it is of type
+        ``Negation`` or ``Conjunction``.
+        """
+
         return not isinstance(self, (Negation, Conjunction,))
 
 
@@ -299,7 +350,21 @@ class Conjunction(Statement):
     """
 
     def __init__(self, *args):
-        self.conjuncts = args
+        """
+        The user will likely define conjunctions like ``a & b & c``, which
+        would typically yield ``(a & b) & c``, which is correct but
+        inconvenient. Better to have ``(a & b & c)`` for easier enumeration
+        through the conjuncts. So the ``__init__`` function checks each
+        conjunct to see if it's a conjunction, and appends those conjuncts
+        to a "flattened" list.
+        """
+
+        self.conjuncts = []
+        for arg in args:
+            if isinstance(arg, Conjunction):
+                self.conjuncts += arg.conjuncts
+            else:
+                self.conjuncts.append(arg)
 
     def __repr__(self):
         return (
@@ -521,6 +586,12 @@ class BayesNode(Statement):
         """
         This looks at all parents of ``self`` and returns a list of lists.
         Each sublist is a boolean combination of each of the upstream nodes.
+        Each combination (e.g. ``a & b``, ``a & ~b``, ``~a & b``, ``~a & ~b``)
+        has to be represented in the ``FactBook`` if we are to accurately
+        determine the influence of parent nodes on their child nodes. In
+        the Bayes net literature, the messages conveying this information
+        from parents import to children is denoted ``pi``, whereas the
+        information transmitted from children to parents is denoted ``lambda``.
         """
 
         incoming_nodes = self.parents()
@@ -555,6 +626,17 @@ class BayesNode(Statement):
     def d_separated(self, z, y):
         """
         Test whether ``z`` d-separates node ``self`` from node ``y``.
+
+        The concept of d-separation is central to Bayes networks. If ``y``
+        d-separates ``x`` from ``z``, then ``x`` and ``z`` are probabilistically
+        independent, given ``y``. In other parlance, it's a "screening-off"
+        condition. For example, coffee drinkers get lung cancer at a higher rate
+        than non-coffee drinkers. But that's because smokers are more likely
+        to be coffee drinkers, and smoking causes cancer. So smoking "screens off"
+        coffee from cancer. In the language of Bayes nets, smoking d-separates
+        coffee and cancer. That is, if you know already whether someone is a
+        smoker, then learning about their coffee consumption doesn't give you
+        any information about the probability that they will get cancer.
         """
 
         def path_d_separated(path_pattern, z):
@@ -585,6 +667,19 @@ class BayesNode(Statement):
         return all(
             path_d_separated(path_pattern, z) for
             path_pattern in path_patterns)
+
+    def d_separates_all(self, list_of_nodes):
+        """
+        Tests whether each pair of nodes in ``list_of_nodes`` is d-separated
+        from each other by self. This will be used (e.g.) to determine how to
+        evaluate ``Given`` statements where the ``statement`` is a conjunction.
+        Specifically, if ``x`` d-separates ``y1``, ``y2``, and ``y3`` then
+        ``P(y1, y2, y3 | x) == P(y1 | x) * P(y2 | x) * P(y3 | x)``.
+        """
+    
+        return all(
+            self.d_separated(list(node_pair)) for node_pair in
+            itertools.combinations(list_of_nodes, 2))
 
     def compute_lambda(self):
         """
