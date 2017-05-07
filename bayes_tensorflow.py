@@ -85,6 +85,12 @@ class Sigma(Arithmetic):
     def __repr__(self):
         return '(Sigma: ' + ', '.join([str(value) for value in self.values]) + ')'
 
+    def __iter__(self):
+        for value in self.values:
+            yield value
+            if hasattr(value, '__iter__'):
+                for i in value:
+                    yield i
 
 class Pi(Arithmetic):
     """
@@ -97,6 +103,12 @@ class Pi(Arithmetic):
     def __repr__(self):
         return '(Pi: ' + ', '.join([str(value) for value in self.values]) + ')'
 
+    def __iter__(self):
+        for value in self.values:
+            yield value
+            if hasattr(value, '__iter__'):
+                for i in value:
+                    yield i
 
 def bayes(given_probability):
     """
@@ -136,6 +148,11 @@ class Inverse(Arithmetic):
     def __repr__(self):
         return '1 / ' + str(self.expression)
 
+    def __iter__(self):
+        yield self.expression
+        if hasattr(self.expression, '__iter__'):
+            for i in self.expression:
+                yield i
 
 class Add(Arithmetic):
 
@@ -150,6 +167,16 @@ class Add(Arithmetic):
         return '({addend_1} + {addend_2})'.format(
             addend_1=str(self.addend_1), addend_2=str(self.addend_2))
 
+    def __iter__(self):
+        yield self.addend_1
+        if hasattr(self.addend_1, '__iter__'):
+            for i in self.addend_1:
+                yield i
+        yield self.addend_2
+        if hasattr(self.addend_2, '__iter__'):
+            for i in self.addend_2:
+                yield i
+
 
 class Multiply(Arithmetic):
 
@@ -159,11 +186,18 @@ class Multiply(Arithmetic):
             raise Exception('Multiply only defined for ``Arithmetic`` objects')
         self.multiplicand_1 = multiplicand_1
         self.multiplicand_2 = multiplicand_2
-    
+
     def __repr__(self):
 
         return '({multiplicand_1} * {multiplicand_2})'.format(
             multiplicand_1=str(self.multiplicand_1), multiplicand_2=str(self.multiplicand_2))
+
+    def __iter__(self):
+        for multiplicand in [self.multiplicand_1, self.multiplicand_2]:
+            yield multiplicand
+            if hasattr(multiplicand, '__iter__'):
+                for i in multiplicand:
+                    yield i
 
 
 class Probability(Arithmetic):
@@ -179,6 +213,12 @@ class Probability(Arithmetic):
 
     def __repr__(self):
         return 'P({statement})'.format(statement=str(self.statement))
+
+    def __iter__(self):
+        yield self.statement
+        if hasattr(self.statement, '__iter__'):
+            for i in self.statement:
+                yield i
 
 
 class Statement(object):
@@ -305,6 +345,16 @@ class Given(Statement):
             return False
         return self.event == other.event and self.given == other.given
 
+    def __iter__(self):
+        yield self.event
+        if hasattr(self.event, '__iter__'):
+            for i in self.event:
+                yield i
+        
+        yield self.given
+        if hasattr(self.given, '__iter__'):
+            for i in self.given:
+                yield i
 
 def event_combinations(*events):
     """
@@ -333,6 +383,11 @@ class Negation(Statement):
     def __repr__(self):
         return '~' + str(self.statement)
 
+    def __iter__(self):
+        yield self.statement
+        if hasattr(self.statement, '__iter__'):
+            for i in self.statement:
+                yield i
 
 class Conjunction(Statement):
     """
@@ -366,6 +421,12 @@ class Conjunction(Statement):
             return False
         return self.conjuncts == other.conjuncts
 
+    def __iter__(self):
+        for conjunct in self.conjuncts:
+            yield conjunct
+            if hasattr(conjunct, '__iter__'):
+                for i in conjunct:
+                    yield i
 
 class BayesNode(Statement):
     """
