@@ -110,16 +110,6 @@ def bayes(given_probability):
         Probability(Given(given.given, given.event)))
 
 
-def alpha(x, y):
-    """
-    We'll have to generalize this to having many y's.
-    """
-
-    return Inverse(
-        (Probability(x) * Probability(Given(y, x))) +
-        (Probability(~x) * Probability(Given(y, ~x)))) 
-
-
 class One(Arithmetic):
     """
     Could be handy for base case in recursive multiplications.
@@ -401,6 +391,35 @@ class BayesNode(Statement):
         # For now, we are not calling the parent class's ``__init__`` method.
         # super(BayesNode, self).__init__()
 
+
+    def _alpha(self, *children):
+        """
+        Normalization factor for node with children.
+        """
+        if len(children) == 0:
+            children = self.children()
+
+        general_case = (
+            (Probability(self) * Pi(
+                *[Probability(Given(child, self)) for child in children])) +
+            (Probability(~self) * Pi(
+                *[Probability(Given(child, ~self)) for child in children])))
+        
+        return general_case
+
+    def _lambda(self, *children):
+        """
+        Likelihood of ``self``.
+        """
+
+        if len(children) == 0:
+            children = self.children()
+
+        general_case = Pi(
+            *[Probability(Given(child, self)) for child in children])
+
+        return general_case
+
     def top_down_eval(self):
         # evaluate the value of self, given the parents only
         pass
@@ -681,23 +700,6 @@ class BayesNode(Statement):
             self.d_separated(list(node_pair)) for node_pair in
             itertools.combinations(list_of_nodes, 2))
 
-    def compute_lambda(self):
-        """
-        Compute the evidential support for ``self`` based on likelihood.
-        Will return a ``Probability`` object (or multiplication of them).
-        """
-
-        def _one_child(child):
-            """
-            Get likelihood based on a single child. Use the "parent requirement"
-            of the child; locate it in the node's ``FactBook`` (assuming it
-            exists).
-            """
-
-            pass
-
-        # recursive call for all descendants; all lambdas then to be multiplied.
-
 
 class BayesEdge(object):
     """
@@ -709,6 +711,7 @@ class BayesEdge(object):
     def __init__(self, source, target):
         self.source = source
         self.target = target
+
 
 def sandbox():
     """
