@@ -27,9 +27,15 @@ Tensorflow ops.
 Current state: We can define a graph, and we can define what's known about
 direct causal influences (using the ``FactBook`` class). Basic facts about
 the graph can be calculated, such as which nodes d-separate arbitrary pairs
-of nodes. Message passing is underway, for which we need to recursively calculate
-any node's lambda and pi functions (following Pearl). Helper methods easily
-define likelihoods, alphas (normalization factors), etc.
+of nodes. Message passing is underway, we can generate the expressions for
+any node's ``alpha`` and ``lambda`` messages (following Pearl 1988). The
+portions of the AST which have been defined can be traversed with the
+usual ``__iter__`` method.
+
+Next step is to be able to traverse the trees of all the message passing
+functions and conditionally replace subexpressions based on the structure
+of the tree -- for example, rewriting expressions of the form ``P(a & b | c)``
+if ``c`` d-separates ``a`` from ``b`` in the directed graph.
 """
 
 from types import *
@@ -92,6 +98,7 @@ class Sigma(Arithmetic):
                 for i in value:
                     yield i
 
+
 class Pi(Arithmetic):
     """
     Multiplication over a list of ``Arithmetic`` objects.
@@ -153,6 +160,7 @@ class Inverse(Arithmetic):
         if hasattr(self.expression, '__iter__'):
             for i in self.expression:
                 yield i
+
 
 class Add(Arithmetic):
 
@@ -389,6 +397,7 @@ class Negation(Statement):
             for i in self.statement:
                 yield i
 
+
 class Conjunction(Statement):
     """
     A list of conjuncts.
@@ -427,6 +436,7 @@ class Conjunction(Statement):
             if hasattr(conjunct, '__iter__'):
                 for i in conjunct:
                     yield i
+
 
 class BayesNode(Statement):
     """
@@ -468,7 +478,7 @@ class BayesNode(Statement):
         
         return general_case
 
-    def _lambda(self, *children):
+    def _lambda(self, *children):  # I wish lambda weren't a reserved word
         """
         Likelihood of ``self``.
         """
