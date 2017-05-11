@@ -566,7 +566,21 @@ class BayesNode(Statement):
         recurse(self)
         return node_list
 
+    def associate_fact_book(self, fact_book):
+        """
+        When we associate a ``FactBook`` with a specific node, then we need
+        to propagate it across all the nodes in the graph.
+        """
+
+        for node in self.connected_nodes():
+            node.fact_book = fact_book
+        self.fact_book = fact_book
+
     def descendants(self):
+        """
+        Return a list of all the descendants of the node.
+        """
+
         node_list = []
         
         def recurse(node):
@@ -892,7 +906,7 @@ def sandbox():
     for i in a.undirected_paths():
         print i
 
-    b.fact_book = fact_book
+    b.associate_fact_book(fact_book)
     print b.parent_requirements_satisfied()
 
     if not b.parent_requirements_satisfied():
