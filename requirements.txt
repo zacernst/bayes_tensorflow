@@ -11,3 +11,4 @@ tensorflow==1.0.1
 codegen==1.0
 recommonmark
 cloud_sptheme
+tabulate>=0.7,<1.0.0

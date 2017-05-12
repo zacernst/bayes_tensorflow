@@ -43,6 +43,7 @@ import itertools
 import hashlib
 import copy
 import functools
+from tabulate import tabulate
 import tensorflow as tf
 
 
@@ -136,6 +137,8 @@ class One(Arithmetic):
     """
     pass
 
+    def __repr__(self):
+        return '1'
 
 class Number(Arithmetic):
 
@@ -464,7 +467,6 @@ class BayesNode(Statement):
         # For now, we are not calling the parent class's ``__init__`` method.
         # super(BayesNode, self).__init__()
 
-
     def _alpha(self, *children):
         """
         Normalization factor for node with children.
@@ -480,18 +482,43 @@ class BayesNode(Statement):
         
         return general_case
 
-    def _lambda(self, *children):  # I wish lambda weren't a reserved word
+    def _pi(self, value=True):
         """
-        Likelihood of ``self``.
+        Computes message propagated from the parents of ``self`` to ``self``.
+        
+        TODO: Make this take d-separation into account -- i.e. graphs that are
+        DAGs but not causal polytrees.
         """
 
-        if len(children) == 0:
-            children = self.children
+        parents = self.parents
 
-        general_case = Pi(
-            *[Probability(Given(child, self)) for child in children])
+        if self.is_source():
+            return Probability(self)
+        else:
+            # TODO: Take into account parent._alpha() negated
+            return Pi(
+                *[((Probability(Given(self, parent)) * parent._pi(value=True)) +
+                   (Probability(Given(self, ~parent)) * parent._pi(value=False))) for parent in parents])
 
-        return general_case
+    def _lambda(self, value=True):  # I wish lambda weren't a reserved word
+        """
+        Likelihood of ``self``. Recursively called for each descendant of ``self``
+        until a sink is reached, in which case it returns an object of type
+        ``One``.
+        """
+
+        children = self.children
+
+        target = self if value else ~self
+
+        if self.is_sink():
+            return One()
+        else:
+            # TODO: Take into account child._lambda() negated
+            general_case = Pi(
+                *[((Probability(Given(child, target)) * child._lambda(value=True)) +
+                   (Probability(Given(~child, target)) * child._lambda(value=False))) for child in children])
+            return general_case
 
     def top_down_eval(self):
         # evaluate the value of self, given the parents only
@@ -832,21 +859,25 @@ class BayesNode(Statement):
             self.d_separated(list(node_pair)) for node_pair in
             itertools.combinations(list_of_nodes, 2))
 
-    def audit(self):
+    def audit(self, print_table=True):
         """
         Return a table of facts about the graph, which facts
         are missing, etc.
         """
-        audit_dict = {}
+       
+        audit_list = []
         for node in self.connected_nodes():
             info_dict = {}
             info_dict['sink'] = node.is_sink()
             info_dict['source'] = node.is_source()
             info_dict['number_of_parents'] = len(node.parents)
             info_dict['number_of_children'] = len(node.children)
-            audit_dict[node] = info_dict
-        return audit_dict
-
+            audit_list.append(info_dict)
+        if print_table:
+            import pdb; pdb.set_trace()
+            print tabulate(audit_list)
+        else:
+            return audit_list
 
 class BayesEdge(object):
     """
