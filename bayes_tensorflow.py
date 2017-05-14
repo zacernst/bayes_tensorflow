@@ -43,6 +43,7 @@ import itertools
 import hashlib
 import copy
 import functools
+import random
 from tabulate import tabulate
 import tensorflow as tf
 
@@ -232,6 +233,12 @@ class Probability(Arithmetic):
             for i in self.statement:
                 yield i
 
+    def __eq__(self, other):
+        try:
+            return self.statement == other.statement
+        except AttributeError:  # attributes are different, not equal
+            return False
+
 
 class Statement(object):
     """
@@ -312,7 +319,7 @@ class FactBook(object):
         self.facts.append(other)
 
     def __contains__(self, other):
-        pass
+        return other in self.facts
 
     def __iadd__(self, other):
         self.facts.append(other)
@@ -334,6 +341,9 @@ class Equals(object):
     def __init__(self, statement, probability):
         self.statement = statement
         self.probability = probability
+
+    def __eq__(self, other):
+        return self.statement == other.statement and self.probability == other.probability
 
     def __repr__(self):
         return str(self.statement) + ' = ' + str(self.probability)
@@ -524,42 +534,44 @@ class BayesNode(Statement):
         # evaluate the value of self, given the parents only
         pass
 
-    def parent_requirements_satisfied(self):
+    def check_satisfied_parent_requirements(self):
+        return len(self.missing_parent_requirements()) == 0
+
+    def value_in_book(self, fact):
         """
-        Return a list of all the ``pi`` requirements for
-        ``self`` which are in the fact book.
+        Return the relevant ``Equals`` object for the ``fact``.
         """
         
-        parent_requirements = self.parent_fact_requirements()
-        satisfied_requirements = []
-        for fact in self.fact_book:
-            statement = fact.statement
-            # Only ``Given`` statements are relevant
-            if not isinstance(statement, Probability):
+        for book_fact in self.fact_book:
+            if not isinstance(book_fact, Equals):
                 continue
-            if not isinstance(statement.statement, Given):
-                continue
-            given_statement = statement.statement
-            if given_statement in parent_requirements:
-                satisfied_requirements.append(given_statement)
-        return satisfied_requirements
+            fact_book_statement = book_fact.statement
+            if not isinstance(fact_book_statement, Probability):
+                raise Exception('This should not happen.')
+            if fact_book_statement.statement == fact:
+                return book_fact
+        return False  # if the fact isn't present
 
-    def child_requirements_satisfied(self):
-        # TODO: Rewrite this function so that it returns which
-        # facts, if any, are missing. Same with
-        # ``parent_fact_requirements``. Also, not very DRY.
-        child_requirements = self.child_fact_requirements()
+    def fact_requirements_satisfied(self, facts):
         satisfied_requirements = [] 
-        for fact in child_requirements:
-            statement = fact.statement
-            if not isinstance(statement, Probability):
-                continue
-            if not instance(statement.statement, Given):
-                pass
-            given_statement = statement.statement
-            if given_statement in child_requirements:
-                satisfied_requirements.append(given_statement)
-        return satisfied_requirements
+        unsatisfied_requirements = []
+        for fact in facts:
+            book_value = self.value_in_book(fact)
+            if book_value is False:
+                unsatisfied_requirements.append(fact)
+            else:
+                satisfied_requirements.append(book_value)
+        return satisfied_requirements, unsatisfied_requirements
+
+    def satisfied_child_requirements(self):
+        child_requirements = self.child_fact_requirements()
+        satisfied, _ = self.fact_requirements_satisfied(child_requirements)
+        return satisfied
+
+    def satisfied_parent_requirements(self):
+        parent_requirements = self.parent_fact_requirements()
+        satisfied, _ = self.fact_requirements_satisfied(parent_requirements)
+        return satisfied
 
     def __repr__(self):
         return str(self.name)
@@ -750,7 +762,7 @@ class BayesNode(Statement):
 
         incoming_nodes = self.parents
         if len(incoming_nodes) == 0:
-            return [self, Negation(self)] 
+            return []
         event_tuples = event_combinations(*incoming_nodes)
         return [
             Given(self,
@@ -770,16 +782,12 @@ class BayesNode(Statement):
 
     def missing_parent_requirements(self):
         requirements = self.parent_fact_requirements()
-        missing = [
-            requirement for requirement in requirements
-            if requirement not in self.parent_requirements_satisfied()]
+        _, missing = self.fact_requirements_satisfied(requirements)
         return missing
-        
+    
     def missing_child_requirements(self):
         requirements = self.child_fact_requirements()
-        missing = [
-            requirement for requirement in requirements
-            if requirement not in self.child_requirements_satisfied()]
+        _, missing = self.fact_requirements_satisfied(requirements)
         return missing
 
     def relevant_parent_fact_dict(self):
@@ -872,12 +880,13 @@ class BayesNode(Statement):
             info_dict['source'] = node.is_source()
             info_dict['number_of_parents'] = len(node.parents)
             info_dict['number_of_children'] = len(node.children)
+            info_dict['satisfied_parent_requirements'] = node.satisfied_parent_requirements()
             audit_list.append(info_dict)
         if print_table:
-            import pdb; pdb.set_trace()
-            print tabulate(audit_list)
+            print tabulate(audit_list, headers='keys')
         else:
             return audit_list
+
 
 class BayesEdge(object):
     """
@@ -886,9 +895,11 @@ class BayesEdge(object):
     other, and this constructor will be called by the ``__add__``
     method in ``BayesNode``.
     """
+
     def __init__(self, source, target):
         self.source = source
         self.target = target
+
 
 
 def sandbox():
@@ -909,42 +920,39 @@ def sandbox():
     a = BayesNode(name='a')
     b = BayesNode(name='b')
     c = BayesNode(name='c')
-    d = BayesNode(name='d')
-    e = BayesNode(name='e')
+    # d = BayesNode(name='d')
+    # e = BayesNode(name='e')
 
     a >> b
-    a >> c
-    b >> d
-    c >> d
-    d >> e
+    b >> c
+    # b >> d
+    # c >> d
+    # d >> e
 
     fact_book = FactBook()
 
-    fact = Equals(Probability(Given(c, a & b)), .5)
-    fact_book += fact
-    fact = Equals(Probability(Given(b, a)), .2)
-    fact_book += fact
-    fact = Equals(Probability(Given(b, ~a)), .3)
-    fact_book += fact
-    print c.parent_fact_requirements()
-    print a.parent_fact_requirements()
-    # Next -- test whether the fact requirements are satisfied by a ``Equals``
-    # in the ``FactBook`` object.
-    print fact_book
-    ###
+    fact_list = [
+        Equals(Probability(Given(b, a)), .2),
+        Equals(Probability(Given(b, ~a)), .5),
+        Equals(Probability(Given(c, b)), .8),
+        Equals(Probability(Given(c, ~b)), .1),
+        Equals(Probability(a), .8)]
 
-    print fact_book.facts[0].statement == c.parent_fact_requirements()[0]
-    for i in a.undirected_paths():
-        print i
-
-    b.associate_fact_book(fact_book)
-    print b.parent_requirements_satisfied()
-
-    if not b.parent_requirements_satisfied():
-        raise Exception()
+    for fact in fact_list:
+        fact_book += fact
     
-    print a.audit()
+    b.associate_fact_book(fact_book)
+    
+    for node in a.connected_nodes():
+        a.state = random.choice([True, False])
 
+    random_node = random.choice(a.connected_nodes())
+
+
+    print b.value_in_book(b.parent_fact_requirements()[1])
+
+    if random_node.is_source():
+        pi_values = None
     import pdb; pdb.set_trace()
 
 
