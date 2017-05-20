@@ -306,6 +306,21 @@ class Statement(object):
 
         return not isinstance(self, (Negation, Conjunction,))
 
+    def truth_value(self):
+        """
+        Recursively evaluate ``self`` to see if it's True or False relative
+        to the graph.
+        """
+
+        if self.is_atomic():
+            return self.state
+        elif isinstance(self, Conjunction):
+            return all(conjunction.truth_value() for conjunction in self.conjuncts)
+        elif isinstance(self, Negation):
+            return not self.statement.truth_value()
+        else:
+            raise Exception('This should not happen.')
+
 
 class FactBook(object):
     """
@@ -550,7 +565,7 @@ class BayesNode(Statement):
                 raise Exception('This should not happen.')
             if fact_book_statement.statement == fact:
                 return book_fact
-        return False  # if the fact isn't present
+        return None  # if the fact isn't present
 
     def fact_requirements_satisfied(self, facts):
         satisfied_requirements = [] 
@@ -764,11 +779,21 @@ class BayesNode(Statement):
         if len(incoming_nodes) == 0:
             return []
         event_tuples = event_combinations(*incoming_nodes)
-        return [
+        print event_tuples
+
+        positive = [
             Given(self,
                 Conjunction(*event_tuple) if len(event_tuple) > 1 else
                 event_tuple[0])
             for event_tuple in event_tuples]
+        
+        negative = [
+            Given(~self,
+                Conjunction(*event_tuple) if len(event_tuple) > 1 else
+                event_tuple[0])
+            for event_tuple in event_tuples]
+
+        return positive + negative
 
     def child_fact_requirements(self):
         """
@@ -778,6 +803,9 @@ class BayesNode(Statement):
         return (
             [Given(child, self) for child in outgoing_nodes] +
             [Given(child, Negation(self))
+             for child in outgoing_nodes] +
+            [Given(~child, self) for child in outgoing_nodes] +
+            [Given(~child, Negation(self))
              for child in outgoing_nodes])
 
     def missing_parent_requirements(self):
@@ -926,7 +954,7 @@ def sandbox():
     a >> b
     b >> c
     # b >> d
-    # c >> d
+    c >> b
     # d >> e
 
     fact_book = FactBook()
@@ -934,6 +962,8 @@ def sandbox():
     fact_list = [
         Equals(Probability(Given(b, a)), .2),
         Equals(Probability(Given(b, ~a)), .5),
+        Equals(Probability(Given(~b, a)), .8),
+        Equals(Probability(Given(~b, ~a)), .5),
         Equals(Probability(Given(c, b)), .8),
         Equals(Probability(Given(c, ~b)), .1),
         Equals(Probability(a), .8)]
@@ -944,7 +974,7 @@ def sandbox():
     b.associate_fact_book(fact_book)
     
     for node in a.connected_nodes():
-        a.state = random.choice([True, False])
+        node.state = random.choice([True, False])
 
     random_node = random.choice(a.connected_nodes())
 
@@ -953,9 +983,46 @@ def sandbox():
 
     if random_node.is_source():
         pi_values = None
+    print '--------------' 
+
+    def parent_messages_multiplicands(some_node, target_self_truth_value=True):
+        """
+        Get the values from each parent which we will multiply together to get
+        the probability that ``some_node`` is ``target_self_truth_value``.
+        """
+
+        multiplicands = []
+        for parent_fact_requirement in some_node.parent_fact_requirements():
+            fact = some_node.value_in_book(parent_fact_requirement)
+            if fact is None:
+                raise Exception('missing fact!')
+            parent_state = fact.statement.statement.given 
+            self_event_state = fact.statement.statement.event
+            state_probability = fact.probability
+            print self_event_state, parent_state, state_probability, parent_state.truth_value()
+            # Check that ``self``'s truth value is the same as target; and
+            # the parent truth value is true. If so, append the multiplicand.
+            if (self_event_state.is_atomic() == target_self_truth_value and
+                    parent_state.truth_value()):
+                multiplicands.append(state_probability)
+        print multiplicands
+
+    parent_messages_multiplicands(b, target_self_truth_value=True)
+
+    b.state = False
+    c.state = True
+    print (a & b).truth_value()
 
     import pdb; pdb.set_trace()
 
 
 if __name__ == '__main__':
-    sandbox()
+    l = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    def event_combinations(event_list, combination_length=None):
+        combination_length = combination_length or len(event_list)
+        for sublist in itertools.combinations(event_list, combination_length):
+            for boolean_combination in itertools.product(
+                    *([[True, False]] * combination_length)):
+                yield [item if boolean_combination[index] else '~' + item for index, item in enumerate(sublist)]
+    for i in event_combinations(l):
+        print i
