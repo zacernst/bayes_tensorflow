@@ -48,6 +48,10 @@ from tabulate import tabulate
 import tensorflow as tf
 
 
+class BayesNetValidationError(Exception):
+    pass
+
+
 def dict_to_function(arg_dict):
     """
     We need functions for Tensorflow ops, so we will use this function
@@ -154,7 +158,7 @@ class Inverse(Arithmetic):
 
     def __init__(self, expression):
         if not isinstance(expression, Arithmetic):
-            raise Exception('Inverse applies only to ``Arithmetic`` objects')
+            raise BayesNetValidationError('Inverse applies only to ``Arithmetic`` objects')
         self.expression = expression
 
     def __repr__(self):
@@ -171,7 +175,7 @@ class Add(Arithmetic):
 
     def __init__(self, addend_1, addend_2):
         if not isinstance(addend_1, Arithmetic) or not isinstance(addend_2, Arithmetic):
-            raise Exception('Add only defined for ``Arithmetic`` objects')
+            raise BayesNetValidationError('Add only defined for ``Arithmetic`` objects')
         self.addend_1 = addend_1
         self.addend_2 = addend_2
 
@@ -196,7 +200,7 @@ class Multiply(Arithmetic):
     def __init__(self, multiplicand_1, multiplicand_2):
         if (not isinstance(multiplicand_1, Arithmetic) or
                 not isinstance(multiplicand_2, Arithmetic)):
-            raise Exception('Multiply only defined for ``Arithmetic`` objects')
+            raise BayesNetValidationError('Multiply only defined for ``Arithmetic`` objects')
         self.multiplicand_1 = multiplicand_1
         self.multiplicand_2 = multiplicand_2
 
@@ -221,7 +225,7 @@ class Probability(Arithmetic):
 
     def __init__(self, statement):
         if not isinstance(statement, Statement):
-            raise Exception('Probability applies only to ``Statement``s')
+            raise BayesNetValidationError('Probability applies only to ``Statement``s')
         self.statement = statement
 
     def __repr__(self):
@@ -319,7 +323,7 @@ class Statement(object):
         elif isinstance(self, Negation):
             return not self.statement.truth_value()
         else:
-            raise Exception('This should not happen.')
+            raise BayesNetValidationError('This should not happen.')
 
 
 class FactBook(object):
@@ -562,7 +566,7 @@ class BayesNode(Statement):
                 continue
             fact_book_statement = book_fact.statement
             if not isinstance(fact_book_statement, Probability):
-                raise Exception('This should not happen.')
+                raise BayesNetValidationError('This should not happen.')
             if fact_book_statement.statement == fact:
                 return book_fact
         return None  # if the fact isn't present
@@ -572,7 +576,7 @@ class BayesNode(Statement):
         unsatisfied_requirements = []
         for fact in facts:
             book_value = self.value_in_book(fact)
-            if book_value is False:
+            if book_value is None:
                 unsatisfied_requirements.append(fact)
             else:
                 satisfied_requirements.append(book_value)
@@ -726,7 +730,7 @@ class BayesNode(Statement):
             elif first_arrow == second_arrow:
                 pattern = 'chain'
             else:
-                raise Exception('This should not happen.')
+                raise BayesNetValidationError('This should not happen.')
             path_pattern_list.append((pattern, quintuple,))
         return path_pattern_list
 
@@ -874,7 +878,7 @@ class BayesNode(Statement):
                     if w is z:
                         return True
                 else:
-                    raise Exception('This should never happen.')
+                    raise BayesNetValidationError('This should never happen.')
             return False  # No w satisfying d-separation was found
 
         path_patterns = self.all_path_patterns(target=y)
@@ -894,6 +898,20 @@ class BayesNode(Statement):
         return all(
             self.d_separated(list(node_pair)) for node_pair in
             itertools.combinations(list_of_nodes, 2))
+
+    def event_combinations_satisfied(self, node_list):
+        for i in range(len(node_list)):
+            i += 1
+            for combo in event_combinations(node_list, combination_length=i):
+                given_combo = [Given(b, i) for i in combo]
+                satisfied_requirements, unsatisfied_requirements = (
+                    b.fact_requirements_satisfied(given_combo))
+                if (len(satisfied_requirements) + len(unsatisfied_requirements) !=
+                        len(given_combo)):
+                    raise BayesNetValidationError('What?!')
+                elif len(satisfied_requirements) == len(given_combo):
+                    yield combo, satisfied_requirements
+
 
     def audit(self, print_table=True):
         """
@@ -995,7 +1013,7 @@ def sandbox():
         for parent_fact_requirement in some_node.parent_fact_requirements():
             fact = some_node.value_in_book(parent_fact_requirement)
             if fact is None:
-                raise Exception('missing fact!')
+                raise BayesNetValidationError('missing fact!')
             parent_state = fact.statement.statement.given 
             self_event_state = fact.statement.statement.event
             state_probability = fact.probability
@@ -1016,13 +1034,65 @@ def sandbox():
     import pdb; pdb.set_trace()
 
 
+def conjunction_factory(*conjuncts):
+    if len(conjuncts) == 1:
+        return conjuncts[0]
+    else:
+        return Conjunction(*conjuncts)
+
+
+def event_combinations(event_list, combination_length=None):
+    """
+    For all combinations of events in ``event_list`` of length
+    ``combination_length``, yield list of all possible truth value
+    assignments in those combinations (as a ``Conjunction).
+    """
+
+    combination_length = combination_length or len(event_list)
+    if combination_length == 0:
+        raise BayesNetValidationError('combination_length must be > 0.')
+    combination_length = combination_length or len(event_list)
+    for sublist in itertools.combinations(event_list, combination_length):
+        inner_sublists = []
+        for boolean_combination in itertools.product(
+                *([[True, False]] * combination_length)):
+            inner_sublist = [
+                item if boolean_combination[index] else ~item
+                for index, item in enumerate(sublist)]
+            inner_sublists.append(conjunction_factory(*inner_sublist))
+        yield inner_sublists
+
+
 if __name__ == '__main__':
-    l = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-    def event_combinations(event_list, combination_length=None):
-        combination_length = combination_length or len(event_list)
-        for sublist in itertools.combinations(event_list, combination_length):
-            for boolean_combination in itertools.product(
-                    *([[True, False]] * combination_length)):
-                yield [item if boolean_combination[index] else '~' + item for index, item in enumerate(sublist)]
-    for i in event_combinations(l):
-        print i
+
+    a = BayesNode(name='a')
+    b = BayesNode(name='b')
+    c = BayesNode(name='c')
+    a >> c
+    b >> c
+    l = [a, b, c]
+    a.state = True
+    b.state = True
+    c.state = False
+   
+    fact_book = FactBook()
+
+    fact_list = [
+        Equals(Probability(Given(b, a)), .2),
+        Equals(Probability(Given(b, ~a)), .5),
+        Equals(Probability(Given(~b, a)), .8),
+        Equals(Probability(Given(~b, ~a)), .5),
+        Equals(Probability(Given(c, b)), .8),
+        Equals(Probability(Given(c, ~b)), .1),
+        Equals(Probability(a), .8)]
+
+    for fact in fact_list:
+        fact_book += fact
+    
+    b.associate_fact_book(fact_book)
+
+    print list(b.event_combinations_satisfied(l))
+
+
+    
+
